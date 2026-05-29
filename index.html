@@ -573,6 +573,128 @@
     border-left: 2px solid var(--danger);
     margin-top: 8px;
   }
+
+  /* ============================
+     MOBILE RESPONSIVE (<=600px)
+     ============================ */
+  @media (max-width: 600px) {
+    body { font-size: 14px; }
+    .container { padding: 12px; }
+
+    /* Header — stack vertically, hide subtitle, prevent awkward wrap */
+    header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      padding-bottom: 12px;
+    }
+    .logo {
+      font-size: 22px;
+      letter-spacing: 0.1em;
+    }
+    .logo-sub { display: none; }
+    .status-cluster {
+      width: 100%;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 10px;
+      flex-wrap: wrap;
+    }
+
+    /* Threat bar label */
+    .threat-bar .label { font-size: 9px; top: -16px; }
+
+    /* Alerts */
+    .alert { padding: 12px 14px; }
+    .alert-event { font-size: 14px; }
+    .alert-severity { font-size: 9px; padding: 2px 6px; }
+    .alert-headline { font-size: 12px; }
+    .alert-meta { font-size: 10px; }
+
+    /* Panels - tighter padding */
+    .panel { padding: 14px; }
+
+    /* Panel titles — stack so city name doesn't compete with OBS label */
+    .panel-title {
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-start;
+      font-size: 10px;
+      margin-bottom: 12px;
+    }
+
+    /* Current conditions — smaller temp, looser breathing room */
+    .current-temp { font-size: 88px; }
+    .current-cond { font-size: 16px; }
+    .current-feels { font-size: 12px; }
+    .current-row {
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    /* Stats — 2x2 grid so the values can breathe */
+    .current-stats {
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .stat .label { font-size: 9px; }
+    .stat .value { font-size: 18px; }
+    .stat .unit { font-size: 11px; }
+
+    /* Wind direction stays inline */
+    .stat .unit { white-space: nowrap; }
+
+    /* Hourly strip — horizontal scroll instead of cramming 12 cols */
+    .hourly-strip {
+      display: flex;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin;
+      scrollbar-color: var(--accent-dim) var(--bg-deep);
+      gap: 2px;
+      padding-bottom: 4px;
+    }
+    .hour {
+      flex: 0 0 56px;
+      padding: 8px 4px;
+    }
+
+    /* Daily — drop the precip column, keep day/condition/temps */
+    .day {
+      grid-template-columns: 50px 1fr 80px;
+      gap: 10px;
+      padding: 10px 4px;
+    }
+    .day-pop { display: none; }
+    .day-name { font-size: 11px; }
+    .day-cond { font-size: 11px; }
+    .day-temps { font-size: 13px; }
+
+    /* Radar — shorter on mobile */
+    .radar-frame { height: 280px; }
+    .radar-controls { padding: 4px; }
+    .radar-controls button { font-size: 10px; padding: 3px 8px; }
+    .radar-controls .timestamp { font-size: 10px; min-width: 60px; padding: 3px 6px; }
+
+    /* Footer — stack */
+    footer {
+      flex-direction: column;
+      gap: 6px;
+      font-size: 10px;
+      align-items: flex-start;
+    }
+  }
+
+  /* Extra-narrow phones (<=380px) */
+  @media (max-width: 380px) {
+    .current-temp { font-size: 76px; }
+    .status-cluster { font-size: 9px; gap: 6px; }
+    .panel { padding: 12px; }
+    .current-stats { gap: 12px; }
+    .stat .value { font-size: 16px; }
+  }
 </style>
 </head>
 <body>
