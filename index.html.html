@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SCOUT // WX</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700;800&family=Major+Mono+Display&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root {
+    --bg: #0a0e0c;
+    --bg-panel: #0f1614;
+    --bg-deep: #050807;
+    --grid: #14201c;
+    --fg: #b8d4c8;
+    --fg-dim: #5a7a6e;
+    --fg-bright: #d4f0e2;
+    --accent: #00ff9d;
+    --accent-dim: #00cc7a;
+    --warn: #ffaa00;
+    --danger: #ff3344;
+    --danger-glow: #ff003355;
+    --border: #1a2a25;
+    --scan: rgba(0, 255, 157, 0.03);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    background: var(--bg-deep);
+    color: var(--fg);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    min-height: 100vh;
+    overflow-x: hidden;
+    line-height: 1.5;
+  }
+
+  /* Scanline overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 2px,
+      var(--scan) 2px,
+      var(--scan) 3px
+    );
+    pointer-events: none;
+    z-index: 100;
+    mix-blend-mode: overlay;
+  }
+
+  /* Vignette */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+    pointer-events: none;
+    z-index: 99;
+  }
+
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 40px 40px;
+    opacity: 0.4;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  /* Header */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 24px;
+  }
+
+  .logo {
+    font-family: 'Major Mono Display', monospace;
+    font-size: 32px;
+    letter-spacing: 0.15em;
+    color: var(--accent);
+    text-shadow: 0 0 12px var(--accent-dim);
+  }
+
+  .logo-sub {
+    font-size: 12px;
+    color: var(--fg-dim);
+    letter-spacing: 0.3em;
+    margin-left: 16px;
+  }
+
+  .status-cluster {
+    display: flex;
+    gap: 32px;
+    font-size: 13px;
+    color: var(--fg-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .status-item .val { color: var(--fg-bright); }
+  .status-item .live::before {
+    content: '●';
+    color: var(--accent);
+    margin-right: 6px;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Alert banner — only shows if active */
+  .alerts {
+    display: none;
+    margin-bottom: 24px;
+  }
+
+  .alerts.active { display: block; }
+
+  .alert {
+    background: linear-gradient(90deg, var(--danger-glow), transparent);
+    border-left: 4px solid var(--danger);
+    padding: 16px 20px;
+    margin-bottom: 8px;
+    position: relative;
+    animation: alert-glow 2s ease-in-out infinite;
+  }
+
+  @keyframes alert-glow {
+    0%, 100% { box-shadow: inset 0 0 20px rgba(255, 51, 68, 0.1); }
+    50% { box-shadow: inset 0 0 30px rgba(255, 51, 68, 0.25); }
+  }
+
+  .alert-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+
+  .alert-event {
+    color: var(--danger);
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .alert-event::before {
+    content: '⚠ ';
+    margin-right: 4px;
+  }
+
+  .alert-severity {
+    font-size: 12px;
+    color: var(--danger);
+    border: 1px solid var(--danger);
+    padding: 3px 10px;
+    letter-spacing: 0.2em;
+  }
+
+  .alert-headline {
+    color: var(--fg-bright);
+    font-size: 14px;
+    margin-bottom: 6px;
+    line-height: 1.5;
+  }
+
+  .alert-meta {
+    color: var(--fg-dim);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
+
+  /* Grid layout */
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .grid-wide {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .grid, .grid-wide { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+  }
+
+  .panel::before {
+    content: '';
+    position: absolute;
+    top: -1px;
+    left: -1px;
+    width: 12px;
+    height: 12px;
+    border-top: 2px solid var(--accent);
+    border-left: 2px solid var(--accent);
+  }
+
+  .panel::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    right: -1px;
+    width: 12px;
+    height: 12px;
+    border-bottom: 2px solid var(--accent);
+    border-right: 2px solid var(--accent);
+  }
+
+  .panel-title {
+    font-size: 12px;
+    color: var(--fg-dim);
+    letter-spacing: 0.3em;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .panel-title .id { color: var(--accent); }
+
+  /* Current conditions — hero panel */
+  .current {
+    grid-column: span 2;
+  }
+
+  @media (max-width: 900px) {
+    .current { grid-column: span 1; }
+  }
+
+  .current-temp {
+    font-family: 'Major Mono Display', monospace;
+    font-size: 128px;
+    line-height: 1;
+    color: var(--fg-bright);
+    text-shadow: 0 0 30px var(--accent-dim);
+    letter-spacing: -0.05em;
+  }
+
+  .current-temp .deg { color: var(--accent); }
+
+  .current-row {
+    display: flex;
+    align-items: baseline;
+    gap: 32px;
+    margin-top: 12px;
+  }
+
+  .current-cond {
+    font-size: 22px;
+    color: var(--fg-bright);
+    letter-spacing: 0.05em;
+  }
+
+  .current-feels {
+    font-size: 14px;
+    color: var(--fg-dim);
+  }
+
+  .current-feels .v { color: var(--fg); }
+
+  .current-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px dashed var(--border);
+  }
+
+  .stat .label {
+    font-size: 11px;
+    color: var(--fg-dim);
+    letter-spacing: 0.2em;
+    margin-bottom: 6px;
+  }
+
+  .stat .value {
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--fg-bright);
+  }
+
+  .stat .unit {
+    font-size: 13px;
+    color: var(--fg-dim);
+    margin-left: 3px;
+  }
+
+  /* Hourly */
+  .hourly-strip {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .hour {
+    text-align: center;
+    padding: 12px 4px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+  }
+
+  .hour:hover {
+    border-color: var(--accent-dim);
+    background: rgba(0, 255, 157, 0.05);
+  }
+
+  .hour .h-time {
+    font-size: 11px;
+    color: var(--fg-dim);
+    letter-spacing: 0.1em;
+  }
+
+  .hour .h-temp {
+    font-size: 16px;
+    color: var(--fg-bright);
+    font-weight: 500;
+    margin: 6px 0;
+  }
+
+  .hour .h-pop {
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+
+  .hour .h-pop.wet { color: #4488ff; }
+
+  .pop-bar {
+    height: 2px;
+    background: var(--border);
+    margin-top: 4px;
+    position: relative;
+  }
+
+  .pop-bar .fill {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--accent-dim), #4488ff);
+    width: var(--pop, 0%);
+  }
+
+  /* 7-day */
+  .daily {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .day {
+    display: grid;
+    grid-template-columns: 70px 1fr 110px 80px;
+    gap: 16px;
+    padding: 14px 10px;
+    align-items: center;
+    border-bottom: 1px dashed var(--border);
+  }
+
+  .day:last-child { border-bottom: none; }
+
+  .day-name {
+    font-size: 13px;
+    color: var(--accent);
+    letter-spacing: 0.15em;
+  }
+
+  .day-cond {
+    font-size: 13px;
+    color: var(--fg);
+  }
+
+  .day-pop {
+    font-size: 12px;
+    color: var(--fg-dim);
+    text-align: right;
+  }
+
+  .day-pop.wet { color: #4488ff; }
+
+  .day-temps {
+    text-align: right;
+    font-size: 15px;
+  }
+
+  .day-temps .hi { color: var(--fg-bright); }
+  .day-temps .lo { color: var(--fg-dim); }
+  .day-temps .sep { color: var(--border); margin: 0 4px; }
+
+  /* Loading state */
+  .loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--fg-dim);
+    letter-spacing: 0.2em;
+    font-size: 12px;
+  }
+
+  .loading::after {
+    content: '_';
+    animation: blink 1s step-end infinite;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  /* Footer */
+  footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--fg-dim);
+    letter-spacing: 0.15em;
+  }
+
+  footer a { color: var(--accent-dim); text-decoration: none; }
+  footer a:hover { color: var(--accent); }
+
+  /* Severe banner pulse */
+  .threat-bar {
+    height: 4px;
+    background: var(--bg-panel);
+    margin-bottom: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .threat-bar .level {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--accent), var(--warn) 50%, var(--danger));
+    width: var(--threat, 15%);
+    transition: width 1s ease;
+  }
+
+  .threat-bar .label {
+    position: absolute;
+    top: -20px;
+    right: 0;
+    font-size: 11px;
+    color: var(--fg-dim);
+    letter-spacing: 0.2em;
+  }
+
+  /* Radar map */
+  .radar-frame {
+    width: 100%;
+    height: 380px;
+    border: 1px solid var(--border);
+    background: var(--bg-deep);
+    position: relative;
+  }
+
+  .radar-frame .leaflet-container {
+    background: var(--bg-deep);
+    font-family: 'JetBrains Mono', monospace;
+    height: 100%;
+    width: 100%;
+  }
+
+  /* Style Leaflet controls to match cyberpunk theme */
+  .leaflet-control-zoom a {
+    background: var(--bg-panel) !important;
+    color: var(--accent) !important;
+    border: 1px solid var(--border) !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-weight: 700 !important;
+  }
+  .leaflet-control-zoom a:hover {
+    background: var(--bg-deep) !important;
+    color: var(--fg-bright) !important;
+  }
+  .leaflet-control-attribution {
+    background: rgba(15, 22, 20, 0.8) !important;
+    color: var(--fg-dim) !important;
+    font-size: 9px !important;
+  }
+  .leaflet-control-attribution a {
+    color: var(--accent-dim) !important;
+  }
+
+  /* Radar animation controls */
+  .radar-controls {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 1000;
+    display: flex;
+    gap: 4px;
+    background: rgba(15, 22, 20, 0.85);
+    border: 1px solid var(--border);
+    padding: 6px;
+  }
+
+  .radar-controls button {
+    background: var(--bg-deep);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+  }
+
+  .radar-controls button:hover {
+    background: var(--bg-panel);
+    color: var(--fg-bright);
+  }
+
+  .radar-controls .timestamp {
+    color: var(--fg-bright);
+    padding: 4px 8px;
+    font-size: 11px;
+    min-width: 80px;
+    text-align: center;
+  }
+
+  /* Center marker for user location */
+  .scout-marker {
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(0, 255, 157, 0.3), 0 0 12px var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .err {
+    color: var(--danger);
+    font-size: 11px;
+    padding: 8px;
+    border-left: 2px solid var(--danger);
+    margin-top: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+
+<div class="container">
+  <header>
+    <div>
+      <span class="logo">SCOUT // WX</span>
+      <span class="logo-sub">TACTICAL WEATHER READOUT</span>
+    </div>
+    <div class="status-cluster">
+      <div class="status-item">
+        <span class="live"></span>
+        <span id="last-update">SYNCING</span>
+      </div>
+      <div class="status-item">
+        STN <span class="val" id="station">---</span>
+      </div>
+      <div class="status-item">
+        <span id="clock">--:--:--</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="threat-bar">
+    <span class="label" id="threat-label">THREAT LEVEL: NOMINAL</span>
+    <div class="level" id="threat-level" style="--threat: 15%"></div>
+  </div>
+
+  <div class="alerts" id="alerts"></div>
+
+  <div id="content">
+    <div class="loading">ESTABLISHING UPLINK</div>
+  </div>
+
+  <footer>
+    <div>DATA: OPEN-METEO + NOAA/NWS · NO TRACKING · NO ACCOUNT</div>
+    <div>SCOUT-WX v1.0 · <a href="#" onclick="loadAll(); return false;">[REFRESH]</a></div>
+  </footer>
+</div>
+
+<script>
+  // === CONFIG (populated at runtime via geolocation) ===
+  let CONFIG = {
+    lat: null,
+    lon: null,
+    label: 'LOCATING...',
+    nwsZone: null,
+    radarStation: null,
+    timezone: 'America/Chicago',
+  };
+
+  // Fallback if geolocation fails entirely
+  const FALLBACK = {
+    lat: 39.1836,
+    lon: -96.5717,
+    label: 'MANHATTAN, KS (FALLBACK)',
+    nwsZone: 'KSC161',
+    radarStation: 'KTWX',
+    timezone: 'America/Chicago',
+  };
+
+  // === WMO weather codes ===
+  const WMO = {
+    0: 'CLEAR', 1: 'MOSTLY CLEAR', 2: 'PARTLY CLOUDY', 3: 'OVERCAST',
+    45: 'FOG', 48: 'RIME FOG', 51: 'LIGHT DRIZZLE', 53: 'DRIZZLE',
+    55: 'HEAVY DRIZZLE', 56: 'FREEZING DRIZZLE', 57: 'HEAVY FRZ DRIZZLE',
+    61: 'LIGHT RAIN', 63: 'RAIN', 65: 'HEAVY RAIN',
+    66: 'FREEZING RAIN', 67: 'HEAVY FRZ RAIN',
+    71: 'LIGHT SNOW', 73: 'SNOW', 75: 'HEAVY SNOW', 77: 'SNOW GRAINS',
+    80: 'RAIN SHOWERS', 81: 'HEAVY SHOWERS', 82: 'VIOLENT SHOWERS',
+    85: 'SNOW SHOWERS', 86: 'HEAVY SNOW SHWR',
+    95: 'THUNDERSTORM', 96: 'T-STORM + HAIL', 99: 'SEVERE T-STORM'
+  };
+
+  // === Clock ===
+  function tick() {
+    const d = new Date();
+    const h = String(d.getHours()).padStart(2, '0');
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const s = String(d.getSeconds()).padStart(2, '0');
+    document.getElementById('clock').textContent = `${h}:${m}:${s}`;
+  }
+  setInterval(tick, 1000); tick();
+
+  // === Compass direction ===
+  function compass(deg) {
+    const dirs = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    return dirs[Math.round(deg / 22.5) % 16];
+  }
+
+  // === Threat assessment ===
+  function calcThreat(current, alerts, daily) {
+    let score = 10;  // base nominal
+
+    if (alerts && alerts.length) {
+      for (const a of alerts) {
+        const sev = a.properties.severity;
+        if (sev === 'Extreme') score = Math.max(score, 95);
+        else if (sev === 'Severe') score = Math.max(score, 80);
+        else if (sev === 'Moderate') score = Math.max(score, 55);
+        else score = Math.max(score, 35);
+      }
+    }
+
+    // Wind
+    if (current.wind_gusts_10m > 50) score = Math.max(score, 70);
+    else if (current.wind_gusts_10m > 35) score = Math.max(score, 45);
+
+    // Code-based
+    const code = current.weather_code;
+    if ([95, 96, 99].includes(code)) score = Math.max(score, 60);
+    if (code === 99 || code === 96) score = Math.max(score, 75);
+
+    return Math.min(score, 100);
+  }
+
+  function threatLabel(s) {
+    if (s >= 80) return 'THREAT LEVEL: CRITICAL';
+    if (s >= 60) return 'THREAT LEVEL: ELEVATED';
+    if (s >= 40) return 'THREAT LEVEL: GUARDED';
+    if (s >= 25) return 'THREAT LEVEL: ADVISORY';
+    return 'THREAT LEVEL: NOMINAL';
+  }
+
+  // === Render ===
+  function renderAlerts(features) {
+    const el = document.getElementById('alerts');
+    if (!features || !features.length) {
+      el.classList.remove('active');
+      el.innerHTML = '';
+      return;
+    }
+    el.classList.add('active');
+    el.innerHTML = features.map(f => {
+      const p = f.properties;
+      const ends = p.ends ? new Date(p.ends).toLocaleString('en-US',
+        {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}) : 'ONGOING';
+      return `
+        <div class="alert">
+          <div class="alert-header">
+            <span class="alert-event">${p.event}</span>
+            <span class="alert-severity">${(p.severity || 'UNKNOWN').toUpperCase()}</span>
+          </div>
+          <div class="alert-headline">${(p.headline || '').substring(0, 200)}</div>
+          <div class="alert-meta">UNTIL ${ends} · ${(p.senderName || 'NWS').toUpperCase()}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function renderMain(wx, alerts) {
+    const cur = wx.current;
+    const hourly = wx.hourly;
+    const daily = wx.daily;
+    const code = cur.weather_code;
+
+    // Find current hour index
+    const now = new Date(cur.time);
+    let hStart = hourly.time.findIndex(t => new Date(t) >= now);
+    if (hStart === -1) hStart = 0;
+
+    // 12 hours forward
+    const hours = [];
+    for (let i = 0; i < 12; i++) {
+      const idx = hStart + i;
+      if (idx >= hourly.time.length) break;
+      hours.push({
+        time: hourly.time[idx],
+        temp: hourly.temperature_2m[idx],
+        pop: hourly.precipitation_probability[idx] || 0,
+        code: hourly.weather_code[idx]
+      });
+    }
+
+    const html = `
+      <div class="grid-wide">
+        <div class="panel current">
+          <div class="panel-title">
+            <span>CURRENT // <span class="id">${CONFIG.label}</span></span>
+            <span>SFC OBS</span>
+          </div>
+          <div class="current-temp">${Math.round(cur.temperature_2m)}<span class="deg">°</span></div>
+          <div class="current-row">
+            <span class="current-cond">${WMO[code] || 'UNKNOWN'}</span>
+            <span class="current-feels">FEELS <span class="v">${Math.round(cur.apparent_temperature)}°</span></span>
+          </div>
+          <div class="current-stats">
+            <div class="stat">
+              <div class="label">WIND</div>
+              <div class="value">${Math.round(cur.wind_speed_10m)}<span class="unit">mph ${compass(cur.wind_direction_10m)}</span></div>
+            </div>
+            <div class="stat">
+              <div class="label">GUSTS</div>
+              <div class="value">${Math.round(cur.wind_gusts_10m)}<span class="unit">mph</span></div>
+            </div>
+            <div class="stat">
+              <div class="label">HUMIDITY</div>
+              <div class="value">${cur.relative_humidity_2m}<span class="unit">%</span></div>
+            </div>
+            <div class="stat">
+              <div class="label">PRESSURE</div>
+              <div class="value">${Math.round(cur.pressure_msl)}<span class="unit">mb</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">
+            <span>RADAR // <span class="id">REGIONAL</span></span>
+            <span>NWS</span>
+          </div>
+          <div class="radar-frame" id="radar-map">
+            <div class="radar-controls">
+              <button id="radar-play" title="Play/Pause">▶</button>
+              <span class="timestamp" id="radar-time">--:--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom: 16px;">
+        <div class="panel-title">
+          <span>HOURLY // <span class="id">12HR FORECAST</span></span>
+          <span>OPEN-METEO</span>
+        </div>
+        <div class="hourly-strip">
+          ${hours.map(h => {
+            const t = new Date(h.time);
+            const hr = t.getHours();
+            const label = hr === 0 ? '00' : String(hr).padStart(2, '0');
+            return `
+              <div class="hour">
+                <div class="h-time">${label}</div>
+                <div class="h-temp">${Math.round(h.temp)}°</div>
+                <div class="h-pop ${h.pop >= 30 ? 'wet' : ''}">${h.pop}%</div>
+                <div class="pop-bar"><div class="fill" style="--pop: ${h.pop}%"></div></div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">
+          <span>EXTENDED // <span class="id">7-DAY OUTLOOK</span></span>
+          <span>OPEN-METEO</span>
+        </div>
+        <div class="daily">
+          ${daily.time.slice(0, 7).map((t, i) => {
+            const d = new Date(t + 'T12:00');
+            const name = d.toLocaleDateString('en-US', {weekday: 'short'}).toUpperCase();
+            const pop = daily.precipitation_probability_max[i] || 0;
+            return `
+              <div class="day">
+                <div class="day-name">${i === 0 ? 'TODAY' : name}</div>
+                <div class="day-cond">${WMO[daily.weather_code[i]] || '—'}</div>
+                <div class="day-pop ${pop >= 30 ? 'wet' : ''}">${pop}% PRECIP</div>
+                <div class="day-temps">
+                  <span class="hi">${Math.round(daily.temperature_2m_max[i])}°</span>
+                  <span class="sep">/</span>
+                  <span class="lo">${Math.round(daily.temperature_2m_min[i])}°</span>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    document.getElementById('content').innerHTML = html;
+
+    // Threat bar
+    const threat = calcThreat(cur, alerts, daily);
+    document.getElementById('threat-level').style.setProperty('--threat', threat + '%');
+    document.getElementById('threat-label').textContent = threatLabel(threat);
+
+    // Initialize/update radar map
+    initRadar();
+  }
+
+  // === Radar (Leaflet + RainViewer) ===
+  let radarMap = null;
+  let radarFrames = [];
+  let radarLayers = [];
+  let currentFrameIdx = 0;
+  let radarPlaying = true;
+  let radarTimer = null;
+
+  async function initRadar() {
+    const mapEl = document.getElementById('radar-map');
+    if (!mapEl) return;
+
+    // First time: create the map
+    if (!radarMap) {
+      radarMap = L.map('radar-map', {
+        center: [CONFIG.lat, CONFIG.lon],
+        zoom: 8,
+        minZoom: 4,
+        maxZoom: 10,
+        zoomControl: true,
+        attributionControl: true,
+        scrollWheelZoom: true,
+      });
+
+      // Dark base map (CartoDB Dark Matter - free, open)
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap © CARTO',
+        maxZoom: 18,
+        subdomains: 'abcd',
+      }).addTo(radarMap);
+
+      // User location marker
+      const icon = L.divIcon({
+        className: 'scout-marker-wrap',
+        html: '<div class="scout-marker"></div>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6],
+      });
+      L.marker([CONFIG.lat, CONFIG.lon], { icon }).addTo(radarMap);
+
+      // Play/pause control
+      document.getElementById('radar-play').addEventListener('click', () => {
+        radarPlaying = !radarPlaying;
+        document.getElementById('radar-play').textContent = radarPlaying ? '▶' : '⏸';
+        if (radarPlaying) animateRadar();
+        else clearTimeout(radarTimer);
+      });
+    } else {
+      // Re-center on update
+      radarMap.setView([CONFIG.lat, CONFIG.lon], radarMap.getZoom());
+    }
+
+    // Fetch latest RainViewer radar frames
+    try {
+      const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+      const data = await res.json();
+
+      // Clear old layers
+      radarLayers.forEach(l => radarMap.removeLayer(l));
+      radarLayers = [];
+
+      // RainViewer past frames (last 2 hours) + forecast (next 30 min)
+      const past = data.radar?.past || [];
+      const forecast = data.radar?.nowcast || [];
+      radarFrames = [...past, ...forecast];
+
+      // Pre-create all radar layers (hidden)
+      const host = data.host;
+      radarFrames.forEach(frame => {
+        // 512px tiles for better detail, color 2 = Universal Blue
+        // tileSize 512 + zoomOffset -1 means each tile covers more area visually
+        const url = `${host}${frame.path}/512/{z}/{x}/{y}/2/1_1.png`;
+        const layer = L.tileLayer(url, {
+          opacity: 0,
+          tileSize: 512,
+          zoomOffset: -1,
+          maxNativeZoom: 10,
+          maxZoom: 10,
+          zIndex: frame.time,
+        }).addTo(radarMap);
+        radarLayers.push(layer);
+      });
+
+      // Start showing the most recent past frame
+      currentFrameIdx = past.length - 1;
+      showFrame(currentFrameIdx);
+
+      if (radarPlaying) animateRadar();
+    } catch (e) {
+      console.warn('Radar fetch failed:', e.message);
+      document.getElementById('radar-time').textContent = 'NO DATA';
+    }
+  }
+
+  function showFrame(idx) {
+    if (!radarLayers.length) return;
+    radarLayers.forEach((l, i) => {
+      l.setOpacity(i === idx ? 0.75 : 0);
+    });
+    const frame = radarFrames[idx];
+    if (frame) {
+      const d = new Date(frame.time * 1000);
+      const isForecast = idx >= radarFrames.length - 3;  // last few are nowcast
+      const label = d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      document.getElementById('radar-time').textContent =
+        (isForecast ? '+' : '') + label;
+      document.getElementById('radar-time').style.color =
+        isForecast ? 'var(--warn)' : 'var(--fg-bright)';
+    }
+  }
+
+  function animateRadar() {
+    clearTimeout(radarTimer);
+    if (!radarPlaying || !radarFrames.length) return;
+    currentFrameIdx = (currentFrameIdx + 1) % radarFrames.length;
+    showFrame(currentFrameIdx);
+    // Pause longer on the most recent past frame
+    const delay = currentFrameIdx === radarFrames.length - 4 ? 1500 : 500;
+    radarTimer = setTimeout(animateRadar, delay);
+  }
+
+  // === Geolocation ===
+  function getLocation() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('GEOLOCATION UNSUPPORTED'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => resolve({
+          lat: pos.coords.latitude,
+          lon: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+        }),
+        err => reject(new Error(
+          err.code === 1 ? 'LOCATION PERMISSION DENIED' :
+          err.code === 2 ? 'POSITION UNAVAILABLE' :
+          err.code === 3 ? 'LOCATION REQUEST TIMEOUT' :
+          'LOCATION ERROR'
+        )),
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+      );
+    });
+  }
+
+  // === NWS metadata lookup (zone, city, radar station) ===
+  async function lookupNwsMeta(lat, lon) {
+    // NWS points endpoint gives us everything we need in one call
+    const res = await fetch(`https://api.weather.gov/points/${lat.toFixed(4)},${lon.toFixed(4)}`, {
+      headers: { 'Accept': 'application/geo+json' }
+    });
+    if (!res.ok) throw new Error(`NWS POINTS ${res.status}`);
+    const data = await res.json();
+    const p = data.properties;
+
+    // countyZone URL looks like: https://api.weather.gov/zones/county/KSC161
+    const countyZone = p.county ? p.county.split('/').pop() : null;
+    const rel = p.relativeLocation?.properties;
+    const city = rel ? `${rel.city}, ${rel.state}`.toUpperCase() : 'UNKNOWN LOCATION';
+
+    return {
+      nwsZone: countyZone,
+      radarStation: p.radarStation,  // e.g. "KTWX"
+      label: city,
+      timezone: p.timeZone || 'America/Chicago',
+    };
+  }
+
+  // === Fetch ===
+  async function loadAll() {
+    document.getElementById('last-update').textContent = 'LOCATING';
+
+    // Step 1: get location
+    try {
+      const loc = await getLocation();
+      CONFIG.lat = loc.lat;
+      CONFIG.lon = loc.lon;
+    } catch (e) {
+      console.warn('Geolocation failed, using fallback:', e.message);
+      document.getElementById('content').innerHTML =
+        `<div class="err">${e.message}<br>USING FALLBACK COORDINATES — ENABLE LOCATION FOR LOCAL READOUT</div>`;
+      Object.assign(CONFIG, FALLBACK);
+    }
+
+    // Step 2: NWS metadata (zone, radar, city name) — only if we have coords
+    if (CONFIG.lat !== null && !CONFIG.label.includes('FALLBACK')) {
+      try {
+        const meta = await lookupNwsMeta(CONFIG.lat, CONFIG.lon);
+        Object.assign(CONFIG, meta);
+      } catch (e) {
+        console.warn('NWS metadata lookup failed:', e.message);
+        CONFIG.label = `${CONFIG.lat.toFixed(2)}, ${CONFIG.lon.toFixed(2)}`;
+        // No NWS zone — alerts will be skipped, that's fine outside US
+      }
+    }
+
+    // Step 3: fetch weather + alerts in parallel
+    try {
+      const tz = encodeURIComponent(CONFIG.timezone);
+      const wxUrl = `https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}`
+        + '&current=temperature_2m,relative_humidity_2m,apparent_temperature,'
+        + 'precipitation,weather_code,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl'
+        + '&hourly=temperature_2m,precipitation_probability,weather_code'
+        + '&daily=weather_code,temperature_2m_max,temperature_2m_min,'
+        + 'precipitation_probability_max,wind_speed_10m_max'
+        + '&temperature_unit=fahrenheit&wind_speed_unit=mph'
+        + `&precipitation_unit=inch&timezone=${tz}&forecast_days=7`;
+
+      const fetches = [fetch(wxUrl)];
+      if (CONFIG.nwsZone) {
+        fetches.push(fetch(`https://api.weather.gov/alerts/active/zone/${CONFIG.nwsZone}`));
+      }
+
+      const responses = await Promise.all(fetches);
+      const wx = await responses[0].json();
+      const features = CONFIG.nwsZone && responses[1]
+        ? (await responses[1].json()).features || []
+        : [];
+
+      renderAlerts(features);
+      renderMain(wx, features);
+
+      const now = new Date();
+      document.getElementById('last-update').textContent =
+        'SYNCED ' + now.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', hour12: false});
+      document.getElementById('station').textContent = CONFIG.nwsZone || 'NO ZONE';
+    } catch (e) {
+      document.getElementById('content').innerHTML =
+        `<div class="err">UPLINK FAILURE: ${e.message}<br>RETRY IN 30S OR CHECK CONNECTION</div>`;
+      console.error(e);
+    }
+  }
+
+  // Initial load
+  loadAll();
+
+  // Auto-refresh every 10 minutes (re-uses cached location, doesn't re-prompt)
+  setInterval(loadAll, 10 * 60 * 1000);
+
+  // Severe alert poll — uses whatever zone is currently configured
+  let knownAlerts = new Set();
+  setInterval(async () => {
+    if (!CONFIG.nwsZone) return;
+    try {
+      const res = await fetch(`https://api.weather.gov/alerts/active/zone/${CONFIG.nwsZone}`);
+      const data = await res.json();
+      for (const f of (data.features || [])) {
+        if (!knownAlerts.has(f.id) && knownAlerts.size > 0) {
+          if (Notification.permission === 'granted') {
+            new Notification('⚠ ' + f.properties.event, {
+              body: f.properties.headline || '',
+              requireInteraction: f.properties.severity === 'Extreme' || f.properties.severity === 'Severe'
+            });
+          }
+        }
+        knownAlerts.add(f.id);
+      }
+    } catch(e) { /* silent */ }
+  }, 2 * 60 * 1000);
+
+  // Request notification permission on first click
+  document.addEventListener('click', () => {
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, { once: true });
+</script>
+</body>
+</html>
